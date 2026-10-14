@@ -75,6 +75,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     navigate('/auth');
   }, [navigate, setUser]);
 
+  const setAuthenticatedSession = useCallback((accessToken: string) => {
+    ++currentRequest.current;
+    setToken(accessToken);
+    localStorage.setItem('token', accessToken);
+  }, []);
+
 const verifyToken = useCallback(async () => {
   const requestId = ++currentRequest.current;
 
@@ -91,6 +97,11 @@ const verifyToken = useCallback(async () => {
     if (requestId !== currentRequest.current) return;
 
     if (!response.ok) {
+      if (response.status !== 400 && response.status !== 401) {
+        console.error(`Token verification failed with status ${response.status}`);
+        return;
+      }
+
       localStorage.removeItem('token');
       setToken(null);
       setUser(null);
@@ -147,10 +158,12 @@ const verifyToken = useCallback(async () => {
     }
   } catch (error) {
     if (requestId !== currentRequest.current) return;
+    console.error('Failed to verify saved authentication token:', error);
+    if (requestId !== currentRequest.current) return;
     console.log('error', error);
     logout();
   }
-}, [logout, navigate, setUser]);
+}, [navigate, setUser]);
   
   useEffect(() => {
     void verifyToken().finally(() => setLoading(false));
@@ -182,8 +195,7 @@ const verifyToken = useCallback(async () => {
         throw new Error('Login succeeded but the server did not return an access token');
       }
 
-      setToken(data.accessToken);
-      localStorage.setItem('token', data.accessToken);
+      setAuthenticatedSession(data.accessToken);
       // Set user details in userAtom based on the new User type
       const normalizedUser: User = {
         id: data.user?.id || data.user?._id || undefined,
@@ -258,8 +270,7 @@ const verifyToken = useCallback(async () => {
 
       // User is now verified and logged in
       if (data.accessToken) {
-        setToken(data.accessToken);
-        localStorage.setItem('token', data.accessToken);
+        setAuthenticatedSession(data.accessToken);
 
         // Set user details
         const normalizedUser: User = {
@@ -384,8 +395,7 @@ const verifyToken = useCallback(async () => {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || data.message || 'Google login failed');
 
-      setToken(data.accessToken);
-      localStorage.setItem('token', data.accessToken);
+      setAuthenticatedSession(data.accessToken);
       // Set user details in userAtom based on the new User type
       const normalizedUser: User = {
         id: data.user?.id || data.user?._id || undefined,
