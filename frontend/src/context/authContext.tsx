@@ -45,7 +45,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [token, setToken] = useState<string | null>(
     localStorage.getItem('token')
   );
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const setUser = useSetAtom(userAtom);
@@ -146,16 +146,19 @@ const verifyToken = useCallback(async () => {
       localStorage.setItem(USER_CACHE_KEY, JSON.stringify(normalizedUser));
     }
   } catch (error) {
+    if (requestId !== currentRequest.current) return;
     console.log('error', error);
     logout();
   }
 }, [logout, navigate, setUser]);
   
   useEffect(() => {
-    verifyToken();
+    void verifyToken().finally(() => setLoading(false));
   }, [verifyToken]);
 
   const login = async (email: string, password: string) => {
+    // Do not let an initial token check invalidate a successful login.
+    ++currentRequest.current;
     setLoading(true);
     setError(null);
     try {
@@ -174,6 +177,10 @@ const verifyToken = useCallback(async () => {
           }
           throw err;
         }
+
+      if (typeof data.accessToken !== 'string' || !data.accessToken.trim()) {
+        throw new Error('Login succeeded but the server did not return an access token');
+      }
 
       setToken(data.accessToken);
       localStorage.setItem('token', data.accessToken);

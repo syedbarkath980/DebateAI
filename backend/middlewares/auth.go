@@ -27,6 +27,12 @@ func AuthMiddleware(configPath string) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		if strings.TrimSpace(cfg.JWT.Secret) == "" {
+			log.Printf("JWT validation unavailable for path %s: JWT secret is not configured", c.Request.URL.Path)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "JWT authentication is not configured"})
+			c.Abort()
+			return
+		}
 
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -35,7 +41,7 @@ func AuthMiddleware(configPath string) gin.HandlerFunc {
 			return
 		}
 
-		tokenParts := strings.Split(authHeader, " ")
+		tokenParts := strings.Fields(authHeader)
 		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token format"})
 			c.Abort()
@@ -109,7 +115,7 @@ func validateJWT(tokenString, secret string) (jwt.MapClaims, error) {
 	claims := jwt.MapClaims{}
 	
 	token, err := jwt.ParseWithClaims(tokenString, &claims, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+		if token.Method != jwt.SigningMethodHS256 {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return []byte(secret), nil

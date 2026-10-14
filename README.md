@@ -88,6 +88,9 @@ The server will start on the port defined in the config file (default: `1313`).
 ### Notes
 - Do **not** commit `config.prod.yml` to version control.
 - Only `config.prod.sample.yml` should remain committed.
+- For Docker deployments, the image creates `config.prod.yml` from the sample
+  and reads secrets such as `JWT_SECRET`, `DATABASE_URI`, and
+  `GOOGLE_CLIENT_ID` from the deployment environment.
 
 
 ### Frontend Configuration
@@ -102,6 +105,10 @@ VITE_GOOGLE_CLIENT_ID="<YOUR_GOOGLE_OAUTH_CLIENT_ID>"
 ```
 
 - Replace `<YOUR_GOOGLE_OAUTH_CLIENT_ID>` with your actual Google OAuth Client ID from Google Cloud Console.
+- In Google Cloud Console, add every frontend origin under **Authorized
+  JavaScript origins**, including `http://localhost:5173` for local development
+  and the deployed frontend's exact `https://` origin. The Google client ID
+  alone cannot authorize a new origin.
 
 > **Note:** Do **not** commit this file to a public repository. Add `.env` to your `.gitignore` to keep it secure.
 

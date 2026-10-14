@@ -62,12 +62,16 @@ export const LoginForm: React.FC<LoginFormProps> = ({ startForgotPassword, infoM
   );
   useEffect(() => {
     const google = window.google;
-    if (!google?.accounts) {
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    if (!google?.accounts || !clientId) {
+      if (!clientId) {
+        console.error('Google sign-in is unavailable: VITE_GOOGLE_CLIENT_ID is not configured.');
+      }
       return;
     }
 
     google.accounts.id.initialize({
-      client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+      client_id: clientId,
       callback: handleGoogleLogin,
     });
 
@@ -193,12 +197,16 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ startOtpVerification }) 
 
   useEffect(() => {
     const google = window.google;
-    if (!google?.accounts) {
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    if (!google?.accounts || !clientId) {
+      if (!clientId) {
+        console.error('Google sign-in is unavailable: VITE_GOOGLE_CLIENT_ID is not configured.');
+      }
       return;
     }
 
     google.accounts.id.initialize({
-      client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+      client_id: clientId,
       callback: handleGoogleLogin,
     });
 
