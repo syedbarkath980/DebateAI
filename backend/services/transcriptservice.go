@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -186,6 +187,9 @@ func SubmitTranscripts(
 		}
 
 		result := JudgeDebateHumanVsHuman(merged)
+		if strings.HasPrefix(result, "Unable to judge") {
+			return nil, fmt.Errorf("AI judge unavailable: %s", result)
+		}
 		result, err = normalizeJudgeResult(result)
 		if err != nil {
 			return nil, fmt.Errorf("AI judge returned an invalid judgment: %w", err)
@@ -649,17 +653,23 @@ func collectTeamTranscripts(
 		byEmail[strings.ToLower(strings.TrimSpace(submission.Email))] = submission.Transcripts
 	}
 
+	// Every client receives the whole side's speech over the WebSocket, so one
+	// participant's submission already covers the side. Requiring every
+	// participant let a single member who disconnected or never reached the
+	// finished phase block the judgment forever. Mark the side ready once any
+	// recorded participant has submitted, merging all submissions received.
 	teamSubmissions := make([]map[string]string, 0, len(memberEmails))
 	for _, memberEmail := range memberEmails {
 		email := strings.ToLower(strings.TrimSpace(memberEmail))
 		if email == "" {
 			return nil, false, fmt.Errorf("team debate %s side contains a participant without an email", role)
 		}
-		transcript, submitted := byEmail[email]
-		if !submitted {
-			return nil, false, nil
+		if transcript, submitted := byEmail[email]; submitted {
+			teamSubmissions = append(teamSubmissions, transcript)
 		}
-		teamSubmissions = append(teamSubmissions, transcript)
+	}
+	if len(teamSubmissions) == 0 {
+		return nil, false, nil
 	}
 	return mergeTeamTranscripts(teamSubmissions...), true, nil
 }
@@ -937,13 +947,16 @@ Provide integer scores from 0 to 10 for each section, totals equal to the sum of
 
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	text, err := generateDefaultModelText(ctx, prompt)
+	text, err := generateDefaultModelJSONText(ctx, prompt)
 	if err != nil {
-		return "Unable to judge."
+		log.Printf("AI judge: Gemini call failed: %v", err)
+		return "Unable to judge: " + err.Error()
 	}
 	if text == "" {
+		log.Printf("AI judge: Gemini returned an empty response")
 		return "Unable to judge."
 	}
+	log.Printf("AI judge: Gemini returned %d chars", len(text))
 	return text
 }
 

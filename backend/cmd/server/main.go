@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"arguehub/config"
 	"arguehub/db"
@@ -78,8 +79,20 @@ func setupRouter(cfg *config.Config) *gin.Engine {
 
 	router.SetTrustedProxies([]string{"127.0.0.1", "localhost"})
 
+	// Allowed CORS origins: local dev defaults plus any comma-separated origins
+	// from the CORS_ORIGINS env var (e.g. the deployed frontend URL). This lets
+	// a deployed backend accept the shared frontend without a code change.
+	allowedOrigins := []string{"http://localhost:5173", "http://localhost:5174", "http://127.0.0.1:5173", "http://127.0.0.1:5174"}
+	if extra := strings.TrimSpace(os.Getenv("CORS_ORIGINS")); extra != "" {
+		for _, origin := range strings.Split(extra, ",") {
+			if origin = strings.TrimSpace(origin); origin != "" {
+				allowedOrigins = append(allowedOrigins, origin)
+			}
+		}
+	}
+
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173", "http://localhost:5174", "http://127.0.0.1:5173", "http://127.0.0.1:5174"},
+		AllowOrigins:     allowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
