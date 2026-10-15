@@ -347,10 +347,6 @@ const TeamDebateRoom: React.FC = () => {
   ) => {
     if (transcriptId && seenTranscriptIdsRef.current.has(transcriptId)) return;
     if (transcriptId) seenTranscriptIdsRef.current.add(transcriptId);
-<<<<<<< HEAD
-    const existing = speechTranscriptsRef.current[phase] || "";
-    const nextTranscript = `${existing}\n${text}`.trim();
-=======
 
     // Speech recognition emits one call per final chunk, so a single spoken
     // turn arrives as several `${speaker}: ...` fragments. Appending each as a
@@ -378,7 +374,7 @@ const TeamDebateRoom: React.FC = () => {
     }
 
     const nextTranscript = lines.join("\n").trim();
->>>>>>> rounak/fix/team-debate-ai-results
+    
     const nextTranscripts = {
       ...speechTranscriptsRef.current,
       [phase]: nextTranscript,
