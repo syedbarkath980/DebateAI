@@ -76,6 +76,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [navigate, setUser]);
 
   const setAuthenticatedSession = useCallback((accessToken: string) => {
+    // Guard against a missing/invalid token: if a successful response fails to
+    // parse, accessToken can be undefined, which would persist "undefined" and
+    // later send `Bearer undefined`. Reject it here, covering all callers.
+    if (!accessToken) return;
     ++currentRequest.current;
     setToken(accessToken);
     localStorage.setItem('token', accessToken);
@@ -159,9 +163,6 @@ const verifyToken = useCallback(async () => {
   } catch (error) {
     if (requestId !== currentRequest.current) return;
     console.error('Failed to verify saved authentication token:', error);
-    if (requestId !== currentRequest.current) return;
-    console.log('error', error);
-    logout();
   }
 }, [navigate, setUser]);
   
@@ -190,10 +191,6 @@ const verifyToken = useCallback(async () => {
           }
           throw err;
         }
-
-      if (typeof data.accessToken !== 'string' || !data.accessToken.trim()) {
-        throw new Error('Login succeeded but the server did not return an access token');
-      }
 
       setAuthenticatedSession(data.accessToken);
       // Set user details in userAtom based on the new User type

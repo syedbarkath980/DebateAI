@@ -197,10 +197,10 @@ func SubmitTranscripts(
 			Result:    result,
 			CreatedAt: time.Now(),
 		}
-		_, err = resultCollection.InsertOne(ctx, resultDoc)
-		if err != nil {
-			return nil, errors.New("failed to store debate result: " + err.Error())
-		}
+		// NOTE: the judgment result is inserted only AFTER all transcript and
+		// rating writes below succeed. Inserting it here would let the early
+		// "result already exists" guard short-circuit a retry and leave the
+		// debate partly saved if any write below failed transiently.
 
 		// Save the debate transcript for both users
 		// First, get user IDs for both participants
@@ -327,6 +327,13 @@ func SubmitTranscripts(
 			} else if err != nil {
 				return nil, fmt.Errorf("failed to check for previously saved debate transcript: %w", err)
 			}
+		}
+
+		// All transcript and rating writes have succeeded; persist the result
+		// now so a transient failure above leaves no result behind and the next
+		// submission can safely retry the whole flow.
+		if _, err = resultCollection.InsertOne(ctx, resultDoc); err != nil {
+			return nil, errors.New("failed to store debate result: " + err.Error())
 		}
 
 		// Clean up submissions after judgment completes.
@@ -940,6 +947,19 @@ Provide integer scores from 0 to 10 for each section, totals equal to the sum of
 	return text
 }
 
+// extractJSONObject returns the substring from the first "{" to the last "}"
+// in s, stripping any prose or markdown fences a model may wrap around the
+// JSON. If no braces are found it returns the trimmed input unchanged so the
+// caller still produces a clear "not valid JSON" error.
+func extractJSONObject(s string) string {
+	start := strings.Index(s, "{")
+	end := strings.LastIndex(s, "}")
+	if start >= 0 && end > start {
+		return s[start : end+1]
+	}
+	return strings.TrimSpace(s)
+}
+
 func normalizeJudgeResult(response string) (string, error) {
 	type scoreDetail struct {
 		Score  int    `json:"score"`
@@ -971,14 +991,10 @@ func normalizeJudgeResult(response string) (string, error) {
 		Verdict                   verdict `json:"verdict"`
 	}
 
-	trimmed := strings.TrimSpace(response)
-	if strings.HasPrefix(trimmed, "```") {
-		trimmed = strings.TrimPrefix(trimmed, "```json")
-		trimmed = strings.TrimPrefix(trimmed, "```JSON")
-		trimmed = strings.TrimPrefix(trimmed, "```")
-		trimmed = strings.TrimSuffix(strings.TrimSpace(trimmed), "```")
-		trimmed = strings.TrimSpace(trimmed)
-	}
+	// Gemini sometimes wraps the JSON in markdown fences or prose
+	// (e.g. "Here is the judgment: {...}"). Extract the JSON object
+	// spanning the first "{" to the last "}" before parsing.
+	trimmed := extractJSONObject(response)
 	var result judgment
 	if err := json.Unmarshal([]byte(trimmed), &result); err != nil {
 		return "", fmt.Errorf("response is not valid JSON: %w", err)

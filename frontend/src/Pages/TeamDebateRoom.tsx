@@ -347,8 +347,38 @@ const TeamDebateRoom: React.FC = () => {
   ) => {
     if (transcriptId && seenTranscriptIdsRef.current.has(transcriptId)) return;
     if (transcriptId) seenTranscriptIdsRef.current.add(transcriptId);
+<<<<<<< HEAD
     const existing = speechTranscriptsRef.current[phase] || "";
     const nextTranscript = `${existing}\n${text}`.trim();
+=======
+
+    // Speech recognition emits one call per final chunk, so a single spoken
+    // turn arrives as several `${speaker}: ...` fragments. Appending each as a
+    // new line produced garbled transcripts that repeated the speaker name
+    // before every fragment (e.g. "rka: a rka: b rka: c"). Merge consecutive
+    // fragments from the same speaker into one line, and drop exact repeats.
+    const existing = speechTranscriptsRef.current[phase] || "";
+    const lines = existing ? existing.split("\n") : [];
+    const colonIndex = text.indexOf(": ");
+    const speakerPrefix = colonIndex > -1 ? text.slice(0, colonIndex + 2) : "";
+    const chunk = colonIndex > -1 ? text.slice(colonIndex + 2).trim() : text.trim();
+
+    if (chunk) {
+      const lastLine = lines.length ? lines[lines.length - 1] : "";
+      if (speakerPrefix && lastLine.startsWith(speakerPrefix)) {
+        const lastChunk = lastLine.slice(speakerPrefix.length).trim();
+        if (lastChunk.endsWith(chunk)) {
+          // Exact repeat of what was just captured; ignore it.
+        } else {
+          lines[lines.length - 1] = `${speakerPrefix}${lastChunk} ${chunk}`.trim();
+        }
+      } else {
+        lines.push(speakerPrefix ? `${speakerPrefix}${chunk}` : chunk);
+      }
+    }
+
+    const nextTranscript = lines.join("\n").trim();
+>>>>>>> rounak/fix/team-debate-ai-results
     const nextTranscripts = {
       ...speechTranscriptsRef.current,
       [phase]: nextTranscript,

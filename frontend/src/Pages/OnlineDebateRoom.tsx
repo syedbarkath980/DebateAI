@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import { useParams } from "react-router-dom";
 import { Button } from "../components/ui/button";
+import { ConfirmationDialog } from "../components/ui/confirmation-dialog";
 
 import JudgmentPopup from "@/components/JudgementPopup";
 import SpeechTranscripts from "@/components/SpeechTranscripts";
@@ -222,6 +223,7 @@ const OnlineDebateRoom = (): JSX.Element => {
   const [localRole, setLocalRole] = useState<DebateRole | null>(null);
   const [peerRole, setPeerRole] = useState<DebateRole | null>(null);
   const [localReady, setLocalReady] = useState(false);
+  const [isConcedeDialogOpen, setIsConcedeDialogOpen] = useState(false);
   const [peerReady, setPeerReady] = useState(false);
   const [debatePhase, setDebatePhase] = useState<DebatePhase>(
     DebatePhase.Setup
@@ -817,11 +819,7 @@ const OnlineDebateRoom = (): JSX.Element => {
   ]);
 
   const handleConcede = useCallback(() => {
-    if (
-      window.confirm(
-        "Are you sure you want to concede? This will count as a loss."
-      )
-    ) {
+    setIsConcedeDialogOpen(false);
       if (wsRef.current) {
         wsRef.current.send(
           JSON.stringify({
@@ -838,10 +836,20 @@ const OnlineDebateRoom = (): JSX.Element => {
         message: "You have conceded the debate.",
         isJudging: false,
       });
-    }
   }, [roomId, currentUserId, currentUser, setDebatePhase, setPopup]);
 
   const handlePhaseDone = useCallback(() => {
+    if (!localRole || !peerRole) {
+      setPopup({
+        show: true,
+        message: "Both debaters must select roles to finish the debate.",
+      });
+      return;
+    }
+
+    // Only the debater whose turn is ending may request the next phase.
+    if (!isMyTurn) return;
+
     const currentIndex = phaseOrder.indexOf(debatePhase);
     console.debug(
       `handlePhaseDone called for ${localRole}. Current phase: ${debatePhase}, Index: ${currentIndex}`
@@ -851,17 +859,18 @@ const OnlineDebateRoom = (): JSX.Element => {
       console.debug(
         `Transitioning to next phase: ${nextPhase} for role: ${localRole}`
       );
-      setDebatePhase(nextPhase);
       wsRef.current?.send(
         JSON.stringify({ type: "phaseChange", phase: nextPhase })
       );
-    } else if (!localRole || !peerRole) {
-      setPopup({
-        show: true,
-        message: "Both debaters must select roles to finish the debate.",
-      });
     }
-  }, [debatePhase, localRole, peerRole, phaseOrder, setDebatePhase, setPopup]);
+  }, [
+    debatePhase,
+    isMyTurn,
+    localRole,
+    peerRole,
+    phaseOrder,
+    setPopup,
+  ]);
 
   // Set timer based on phase duration
   useEffect(() => {
@@ -1270,6 +1279,9 @@ const OnlineDebateRoom = (): JSX.Element => {
           break;
         case "roomParticipants":
           if (data.roomParticipants) {
+            if (data.phase) {
+              setDebatePhase(data.phase);
+            }
             console.debug(
               "Received room participants update:",
               data.roomParticipants
@@ -2128,26 +2140,26 @@ const OnlineDebateRoom = (): JSX.Element => {
   useEffect(() => {
     if (localReady && peerReady) {
       setShowSetupPopup(false);
-      setCountdown(3);
+      setCountdown(debatePhase === DebatePhase.Setup ? 3 : null);
     } else {
       setShowSetupPopup(true);
+      setCountdown(null);
     }
-  }, [localReady, peerReady]);
+  }, [localReady, peerReady, debatePhase]);
 
   // Countdown logic
   useEffect(() => {
     if (countdown !== null && countdown > 0) {
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
       return () => clearTimeout(timer);
-    } else if (countdown === 0) {
-      setDebatePhase(DebatePhase.OpeningFor);
-      wsRef.current?.send(
-        JSON.stringify({ type: "phaseChange", phase: DebatePhase.OpeningFor })
-      );
-      console.debug(
-        `Countdown finished. Starting debate at ${DebatePhase.OpeningFor} for ${localRole}`
-      );
+    } else if (countdown === 0 && debatePhase === DebatePhase.Setup) {
       if (localRole === "for") {
+        wsRef.current?.send(
+          JSON.stringify({ type: "phaseChange", phase: DebatePhase.OpeningFor })
+        );
+        console.debug(
+          `Countdown finished. Requesting debate start at ${DebatePhase.OpeningFor}`
+        );
         pcRef.current
           ?.createOffer()
           .then((offer) =>
@@ -2158,7 +2170,7 @@ const OnlineDebateRoom = (): JSX.Element => {
           );
       }
     }
-  }, [countdown, localRole]);
+  }, [countdown, debatePhase, localRole]);
 
   // Clear input fields on phase change
   useEffect(() => {
@@ -2259,7 +2271,7 @@ const OnlineDebateRoom = (): JSX.Element => {
             debatePhase !== DebatePhase.Setup && (
               <div className="mt-2">
                 <Button
-                  onClick={handleConcede}
+                  onClick={() => setIsConcedeDialogOpen(true)}
                   className="bg-red-500 hover:bg-red-600 text-white rounded-md px-3 text-sm"
                 >
                   Concede
@@ -2799,6 +2811,15 @@ const OnlineDebateRoom = (): JSX.Element => {
           animation: glow 2s infinite;
         }
       `}</style>
+      <ConfirmationDialog
+        open={isConcedeDialogOpen}
+        onOpenChange={setIsConcedeDialogOpen}
+        title="Concede debate?"
+        description="Are you sure you want to concede? This will count as a loss."
+        confirmLabel="Concede"
+        onConfirm={handleConcede}
+        destructive
+      />
     </div>
   );
 };
