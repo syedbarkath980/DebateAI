@@ -1,6 +1,12 @@
 server:
   port: 1313 # The port number your backend server will run on
 
+cors:
+  allowedOrigins:
+    - "http://localhost:5173"
+    # Add the exact deployed frontend origin, for example:
+    # - "https://your-frontend.example.com"
+
 database:
   uri: "mongodb+srv://<username>:<password>@<cluster-url>/<database-name>"
   # Replace with your MongoDB Atlas connection string

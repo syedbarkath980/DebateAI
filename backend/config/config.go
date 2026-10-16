@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -11,6 +12,10 @@ type Config struct {
 	Server struct {
 		Port int `yaml:"port"`
 	} `yaml:"server"`
+
+	CORS struct {
+		AllowedOrigins []string `yaml:"allowedOrigins"`
+	} `yaml:"cors"`
 
 	Cognito struct {
 		AppClientId     string `yaml:"appClientId"`
@@ -89,7 +94,21 @@ func LoadConfig(path string) (*Config, error) {
 	if envGoogleClient := os.Getenv("GOOGLE_CLIENT_ID"); envGoogleClient != "" {
 		cfg.GoogleOAuth.ClientID = envGoogleClient
 	}
+	if envCORSOrigins := os.Getenv("CORS_ALLOWED_ORIGINS"); envCORSOrigins != "" {
+		cfg.CORS.AllowedOrigins = splitAndTrim(envCORSOrigins)
+	}
 	// Add other overrides as needed
 
 	return &cfg, nil
+}
+
+func splitAndTrim(value string) []string {
+	parts := strings.Split(value, ",")
+	origins := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if origin := strings.TrimSpace(part); origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+	return origins
 }
