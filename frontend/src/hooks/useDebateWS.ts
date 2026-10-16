@@ -1,6 +1,7 @@
-import config from "../config/config";
-import { useEffect, useRef } from 'react';
-import { useAtom } from 'jotai';
+// import config from "../config/config";
+import config, { getWebSocketBaseUrl } from "../config/config";
+import { useEffect, useRef } from "react";
+import { useAtom, useStore } from "jotai";
 import {
   wsAtom,
   debateIdAtom,
@@ -12,8 +13,8 @@ import {
   spectatorHashAtom,
   lastEventIdAtom,
   PollInfo,
-} from '../atoms/debateAtoms';
-import ReconnectingWebSocket from 'reconnecting-websocket';
+} from "../atoms/debateAtoms";
+import ReconnectingWebSocket from "reconnecting-websocket";
 
 interface Event {
   type: string;
@@ -22,7 +23,8 @@ interface Event {
 }
 
 export const useDebateWS = (debateId: string | null) => {
-  const [ws, setWs] = useAtom(wsAtom);
+  const [, setWs] = useAtom(wsAtom);
+  const store = useStore();
   const [, setDebateId] = useAtom(debateIdAtom);
   const [, setPollState] = useAtom(pollStateAtom);
   const [, setQuestions] = useAtom(questionsAtom);
@@ -42,8 +44,9 @@ export const useDebateWS = (debateId: string | null) => {
       return;
     }
 
-    if (ws) {
-      const existing = ws as unknown as ReconnectingWebSocket;
+    const currentSocket = store.get(wsAtom);
+    if (currentSocket) {
+      const existing = currentSocket as unknown as ReconnectingWebSocket;
       if (
         existing.readyState === WebSocket.CLOSING ||
         existing.readyState === WebSocket.CLOSED
@@ -52,38 +55,26 @@ export const useDebateWS = (debateId: string | null) => {
       } else {
         wsRef.current = existing;
         if (existing.readyState === WebSocket.OPEN) {
-          setWsStatus('connected');
+          setWsStatus("connected");
         } else if (existing.readyState === WebSocket.CONNECTING) {
-          setWsStatus('connecting');
+          setWsStatus("connecting");
         } else {
-          setWsStatus('disconnected');
+          setWsStatus("disconnected");
         }
         return;
       }
     }
 
-    setWsStatus('connecting');
-
-    // Get WebSocket URL
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const apiUrl = config.baseUrl;
-    let host = window.location.host;
-    if (apiUrl) {
-      try {
-        host = new URL(apiUrl).host;
-      } catch {
-        host = apiUrl.replace(/^https?:\/\//, '');
-      }
-    }
-
-    let spectatorId = localStorage.getItem('spectatorId');
+    let spectatorId = localStorage.getItem("spectatorId");
     if (!spectatorId) {
       spectatorId = crypto.randomUUID();
-      localStorage.setItem('spectatorId', spectatorId);
+      localStorage.setItem("spectatorId", spectatorId);
     }
 
-    const wsUrl = `${protocol}//${host}/ws/debate/${debateId}${
-      spectatorId ? `?spectatorId=${spectatorId}` : ''
+    const wsUrl = `${getWebSocketBaseUrl(
+      config.baseUrl,
+    )}/ws/debate/${debateId}${
+      spectatorId ? `?spectatorId=${spectatorId}` : ""
     }`;
 
     const rws = new ReconnectingWebSocket(wsUrl, [], {
@@ -96,15 +87,16 @@ export const useDebateWS = (debateId: string | null) => {
 
     wsRef.current = rws;
     setWs(rws as unknown as WebSocket);
+    setWsStatus("connecting");
     let ownsConnection = true;
 
     rws.onopen = () => {
-      setWsStatus('connected');
+      setWsStatus("connected");
 
       const spectatorHashValue =
-        spectatorHash || localStorage.getItem('spectatorHash') || '';
+        spectatorHash || localStorage.getItem("spectatorHash") || "";
       const joinMessage = {
-        type: 'join',
+        type: "join",
         payload: {
           spectatorHash: spectatorHashValue,
         },
@@ -116,12 +108,12 @@ export const useDebateWS = (debateId: string | null) => {
       try {
         const eventData: Event = JSON.parse(event.data);
 
-        if (eventData.type !== 'poll_snapshot' && eventData.timestamp) {
+        if (eventData.type !== "poll_snapshot" && eventData.timestamp) {
           setLastEventId(String(eventData.timestamp));
         }
 
         switch (eventData.type) {
-          case 'poll_snapshot': {
+          case "poll_snapshot": {
             const payload = eventData.payload || {};
             const pollsPayload = payload.polls;
             if (Array.isArray(pollsPayload)) {
@@ -129,16 +121,16 @@ export const useDebateWS = (debateId: string | null) => {
               pollsPayload.forEach((poll) => {
                 if (!poll) return;
                 const pollId =
-                  typeof poll.pollId === 'string'
+                  typeof poll.pollId === "string"
                     ? poll.pollId
-                    : String(poll.pollId ?? '');
+                    : String(poll.pollId ?? "");
                 if (!pollId) return;
                 const countsRaw = poll.counts || {};
                 const counts: Record<string, number> = {};
-                if (countsRaw && typeof countsRaw === 'object') {
+                if (countsRaw && typeof countsRaw === "object") {
                   Object.entries(countsRaw).forEach(([option, value]) => {
                     const numericValue =
-                      typeof value === 'number'
+                      typeof value === "number"
                         ? value
                         : Number(value ?? 0) || 0;
                     counts[option] = numericValue;
@@ -147,7 +139,7 @@ export const useDebateWS = (debateId: string | null) => {
                 let options: string[] = [];
                 if (Array.isArray(poll.options)) {
                   options = poll.options
-                    .map((opt: unknown) => String(opt ?? '').trim())
+                    .map((opt: unknown) => String(opt ?? "").trim())
                     .filter((opt: string) => opt.length > 0);
                 }
                 if (options.length === 0) {
@@ -156,11 +148,11 @@ export const useDebateWS = (debateId: string | null) => {
                 const info: PollInfo = {
                   pollId,
                   question:
-                    typeof poll.question === 'string' ? poll.question : '',
+                    typeof poll.question === "string" ? poll.question : "",
                   options,
                   counts,
                   voters:
-                    typeof poll.voters === 'number'
+                    typeof poll.voters === "number"
                       ? poll.voters
                       : Number(poll.voters ?? 0) || 0,
                 };
@@ -178,11 +170,11 @@ export const useDebateWS = (debateId: string | null) => {
                 const options = Object.keys(counts || {});
                 legacyResult[pollId] = {
                   pollId,
-                  question: '',
+                  question: "",
                   options,
                   counts: counts || {},
                   voters:
-                    typeof payload.votersCount?.[pollId] === 'number'
+                    typeof payload.votersCount?.[pollId] === "number"
                       ? payload.votersCount[pollId]
                       : 0,
                 };
@@ -192,11 +184,11 @@ export const useDebateWS = (debateId: string | null) => {
             break;
           }
 
-          case 'vote':
+          case "vote":
             setPollState((prev) => {
               const pollId = eventData.payload?.pollId;
               const option = eventData.payload?.option;
-              if (typeof pollId !== 'string' || typeof option !== 'string') {
+              if (typeof pollId !== "string" || typeof option !== "string") {
                 return prev;
               }
               const nextState = { ...prev };
@@ -204,7 +196,7 @@ export const useDebateWS = (debateId: string | null) => {
               if (!existing) {
                 nextState[pollId] = {
                   pollId,
-                  question: '',
+                  question: "",
                   options: [option],
                   counts: { [option]: 1 },
                   voters: 0,
@@ -225,7 +217,7 @@ export const useDebateWS = (debateId: string | null) => {
             });
             break;
 
-          case 'poll_created': {
+          case "poll_created": {
             const poll = eventData.payload;
             if (poll && poll.pollId) {
               setPollState((prev) => {
@@ -234,13 +226,11 @@ export const useDebateWS = (debateId: string | null) => {
                 const counts: Record<string, number> = {};
                 Object.entries(countsRaw).forEach(([option, value]) => {
                   counts[option] =
-                    typeof value === 'number'
-                      ? value
-                      : Number(value ?? 0) || 0;
+                    typeof value === "number" ? value : Number(value ?? 0) || 0;
                 });
                 const options = Array.isArray(poll.options)
                   ? poll.options
-                      .map((opt: unknown) => String(opt ?? '').trim())
+                      .map((opt: unknown) => String(opt ?? "").trim())
                       .filter((opt: string) => opt.length > 0)
                   : Object.keys(counts);
                 return {
@@ -248,11 +238,11 @@ export const useDebateWS = (debateId: string | null) => {
                   [pollId]: {
                     pollId,
                     question:
-                      typeof poll.question === 'string' ? poll.question : '',
+                      typeof poll.question === "string" ? poll.question : "",
                     options,
                     counts,
                     voters:
-                      typeof poll.voters === 'number'
+                      typeof poll.voters === "number"
                         ? poll.voters
                         : Number(poll.voters ?? 0) || 0,
                   },
@@ -262,7 +252,7 @@ export const useDebateWS = (debateId: string | null) => {
             break;
           }
 
-          case 'question':
+          case "question":
             setQuestions((prev) => [
               ...prev,
               {
@@ -274,7 +264,7 @@ export const useDebateWS = (debateId: string | null) => {
             ]);
             break;
 
-          case 'reaction':
+          case "reaction":
             setReactions((prev) => [
               ...prev.slice(-49),
               {
@@ -285,7 +275,7 @@ export const useDebateWS = (debateId: string | null) => {
             ]);
             break;
 
-          case 'presence': {
+          case "presence": {
             const count = eventData.payload.connected || 0;
             setPresence(count);
             break;
@@ -294,19 +284,16 @@ export const useDebateWS = (debateId: string | null) => {
           default:
         }
       } catch (error) {
+        console.error("Failed to parse WebSocket message:", error);
       }
     };
 
     rws.onerror = () => {
-      setWsStatus('error');
+      setWsStatus("error");
     };
 
     rws.onclose = () => {
-      setWsStatus('disconnected');
-      setWs(null);
-      if (wsRef.current === rws) {
-        wsRef.current = null;
-      }
+      setWsStatus("disconnected");
     };
 
     return () => {
@@ -316,14 +303,14 @@ export const useDebateWS = (debateId: string | null) => {
           wsRef.current = null;
         }
         setWs(null);
-        setWsStatus('disconnected');
+        setWsStatus("disconnected");
       }
       ownsConnection = false;
     };
   }, [
     debateId,
     spectatorHash,
-    ws,
+    store,
     setWs,
     setDebateId,
     setPollState,
@@ -346,4 +333,3 @@ export const useDebateWS = (debateId: string | null) => {
     ws: wsRef.current,
   };
 };
-

@@ -2,6 +2,7 @@ package routes
 
 import (
 	"context"
+	"errors"
 	"math"
 	"math/rand"
 	"net/http"
@@ -189,7 +190,18 @@ func JoinRoomHandler(c *gin.Context) {
 
 	// Use atomic operation to join room
 	roomCollection := db.MongoDatabase.Collection("rooms")
-	filter := bson.M{"_id": roomId}
+	filter := bson.M{
+		"_id": roomId,
+		"$or": bson.A{
+			bson.M{"participants.id": participant.ID},
+			bson.M{"$expr": bson.M{
+				"$lt": bson.A{
+					bson.M{"$size": bson.M{"$ifNull": bson.A{"$participants", bson.A{}}}},
+					2,
+				},
+			}},
+		},
+	}
 	update := mongo.Pipeline{
 		bson.D{{Key: "$set", Value: bson.D{
 			{Key: "participants", Value: bson.D{{Key: "$cond", Value: bson.A{
@@ -214,6 +226,21 @@ func JoinRoomHandler(c *gin.Context) {
 
 	var updatedRoom Room
 	if err := roomCollection.FindOneAndUpdate(ctx, filter, update, opts).Decode(&updatedRoom); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			var existingRoom struct {
+				ID string `bson:"_id"`
+			}
+			if lookupErr := roomCollection.FindOne(ctx, bson.M{"_id": roomId}).Decode(&existingRoom); errors.Is(lookupErr, mongo.ErrNoDocuments) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Room not found"})
+				return
+			} else if lookupErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not join room"})
+				return
+			}
+
+			c.JSON(http.StatusConflict, gin.H{"error": "Room is full"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not join room"})
 		return
 	}
